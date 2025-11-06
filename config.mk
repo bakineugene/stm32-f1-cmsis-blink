@@ -11,12 +11,11 @@ SIZE = arm-none-eabi-size
 
 # CMSIS paths
 CMSIS_ROOT = cmsis
-CMSIS_DEVICE = $(CMSIS_ROOT)/STM32F1xx
 CMSIS_CORE = cmsis_core/CMSIS/Core
 
 # Compilation flags
 CFLAGS = -mcpu=$(DEVICE_CORE) -mthumb -Wall -O0 -g
-CFLAGS += -I$(CMSIS_CORE)/Include -I$(CMSIS_DEVICE)/Include -Iinclude
+CFLAGS += -I$(CMSIS_CORE)/Include -I$(CMSIS_ROOT)/Include -Iinclude
 CFLAGS += -D$(DEVICE_SUBFAMILY)  -ffreestanding
 LDFLAGS = -T ld/linker.ld -nostartfiles -nostdlib -Wl,-Map=output.map
 
