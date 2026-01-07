@@ -11,6 +11,10 @@ TARGET = firmware
 $(BUILD_DIRS):
 	@mkdir -p $@
 
+init:
+	git submodule init
+	git submodule update
+
 all: $(BUILD_DIRS) $(TARGET).bin $(TARGET).hex
 
 $(TARGET).elf: $(OBJS)
