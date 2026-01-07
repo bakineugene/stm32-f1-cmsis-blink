@@ -2,10 +2,39 @@
 
 void _init(void) {}
 
-void delay(volatile uint32_t n) {
-    while (n--) {
-        __asm__("nop");
+#define MAX_BLINK_DELAY 300
+#define DELAY_BLINK_STEP 5
+
+struct BlinkConfig {
+    int32_t time;
+    int32_t delay;
+    int8_t delay_step;
+};
+
+volatile struct BlinkConfig blink = {0, MAX_BLINK_DELAY, -DELAY_BLINK_STEP};
+
+void ResetBlinkTime(void) {
+    blink.time = 0;
+    blink.delay += blink.delay_step;
+    if (blink.delay > MAX_BLINK_DELAY) blink.delay_step = -DELAY_BLINK_STEP;
+    if (blink.delay < 0) blink.delay_step = DELAY_BLINK_STEP;
+}
+
+void UpdateBlinkTime(void) {
+    ++blink.time;
+
+    if (blink.time > blink.delay && READ_BIT(GPIOC->ODR, GPIO_ODR_ODR13)) {
+        GPIOC->BSRR = GPIO_BSRR_BR13;
+        ResetBlinkTime();
     }
+    if (blink.time > blink.delay && !READ_BIT(GPIOC->ODR, GPIO_ODR_ODR13)) {
+        GPIOC->BSRR = GPIO_BSRR_BS13;
+        ResetBlinkTime();
+    }
+}
+
+void SysTick_Handler(void) {
+    UpdateBlinkTime();
 }
 
 void SystemClock_Config(void) {
@@ -31,16 +60,13 @@ void SystemClock_Config(void) {
 
 int main(void) {
     SystemClock_Config();
+    SystemCoreClockUpdate();
+    SysTick_Config(SystemCoreClock / 1000);
 
     RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
 
     GPIOC->CRH &= ~(GPIO_CRH_MODE13 | GPIO_CRH_CNF13);
     GPIOC->CRH |= GPIO_CRH_MODE13_1;
 
-    while (1) {
-        GPIOC->BSRR = GPIO_BSRR_BR13;
-        delay(5000000);
-        GPIOC->BSRR = GPIO_BSRR_BS13;
-        delay(1000000);
-    }
+    while (1) { /* empty */ }
 }
