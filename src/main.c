@@ -2,9 +2,24 @@
 
 void _init(void) { /* empty */ }
 
+// Settings for High Speed External (HSE) oscillator
+#define ENABLE_HSE() (RCC->CR |= RCC_CR_HSEON)
+#define HSE_READY() (RCC->CR & RCC_CR_HSERDY)
+
 #define ENABLE_GPIOB_CLOCK() (RCC->APB2ENR |= RCC_APB2ENR_IOPBEN)
 #define ENABLE_GPIOC_CLOCK() (RCC->APB2ENR |= RCC_APB2ENR_IOPCEN)
 #define ENABLE_AFIOEN_CLOCK() (RCC->APB2ENR |= RCC_APB2ENR_AFIOEN)
+
+#define RESET_EXTICR(exti, pin) AFIO->EXTICR[exti - 1] &= ~AFIO_EXTICR##exti##_EXTI##pin
+#define SET_EXTICR(exti, pin, port) AFIO->EXTICR[exti - 1] |= AFIO_EXTICR##exti##_EXTI##pin##_##port
+
+#define ENABLE_EXTI(pin) EXTI->IMR |= EXTI_IMR_MR##pin
+#define ENABLE_EXTI_FALLING(pin) EXTI->FTSR |= EXTI_FTSR_TR##pin
+#define DISABLE_EXTI_FALLING(pin) EXTI->FTSR &= ~EXTI_FTSR_TR##pin
+#define ENABLE_EXTI_RISING(pin) EXTI->RTSR |= EXTI_RTSR_TR##pin
+#define DISABLE_EXTI_RISING(pin) EXTI->RTSR &= ~EXTI_RTSR_TR##pin
+#define RESET_EXTI_PENDING(pin) EXTI->PR = EXTI_PR_PR##pin
+#define EXTI_PENDING(pin) EXTI->PR & EXTI_PR_PR##pin
 
 // Preparse CRH for writing configuration values
 #define RESET_CRH(pin) CRH &= ~(GPIO_CRH_MODE##pin | GPIO_CRH_CNF##pin)
@@ -76,16 +91,26 @@ void SysTick_Handler(void) {
 }
 
 void EXTI9_5_IRQHandler(void) {
-    if (EXTI->PR & (1U << 9)) {
-        EXTI->PR = (1U << 9);
+    if (EXTI_PENDING(9)) {
+        RESET_EXTI_PENDING(9);
         BlinkSecondLED();
     }
 }
 
 void SystemClock_Config(void) {
-    RCC->CR |= RCC_CR_HSEON;
-    while (!(RCC->CR & RCC_CR_HSERDY));
+    ENABLE_HSE(); while (!HSE_READY());
 
+    /**
+     * Bits 2:0 LATENCY: Latency
+     * These bits represent the ratio of the SYSCLK (system clock) period to the Flash access
+     * time.
+     *
+     * 000 Zero wait state        0 MHz < SYSCLK ≤ 24 MHz   : default
+     * 001 One wait state        24 MHz < SYSCLK ≤ 48 MHz   : FLASH_ACR_LATENCY_0
+     * 010 Two wait states       48 MHz < SYSCLK ≤ 72 MHz   : FLASH_ACR_LATENCY_1
+     *
+     * See PM0075 Flash Programming Tutorial
+     */
     FLASH->ACR = FLASH_ACR_PRFTBE | FLASH_ACR_LATENCY_2;
 
     RCC->CFGR &= ~RCC_CFGR_PLLSRC & ~RCC_CFGR_PLLMULL;
@@ -101,12 +126,15 @@ void SystemClock_Config(void) {
     RCC->CFGR &= ~RCC_CFGR_SW;
     RCC->CFGR |= RCC_CFGR_SW_PLL;
     while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL);
+
+    SystemCoreClockUpdate();
 }
 
 int main(void) {
     SystemClock_Config();
-    SystemCoreClockUpdate();
-    SysTick_Config(SystemCoreClock / 1000);
+    if(SysTick_Config(SystemCoreClock / 1000)) {
+        while(1); // error
+    }
 
     ENABLE_GPIOC_CLOCK();
     ENABLE_GPIOB_CLOCK();
@@ -122,14 +150,15 @@ int main(void) {
     GPIOB->CRH |= CRH_IN_PULL(9);
     GPIOB->PULL_UP(9);
 
-    AFIO->EXTICR[2] &= ~(0xFU << 4);
-    AFIO->EXTICR[2] |=  (0x1U << 4);
-    EXTI->IMR  |=  (1U << 9);
-    EXTI->RTSR &= ~(1U << 9);
-    EXTI->FTSR |=  (1U << 9);
-    EXTI->PR    =  (1U << 9);
+    RESET_EXTICR(3, 9);
+    SET_EXTICR(3, 9, PB);
 
-    NVIC_SetPriority(EXTI9_5_IRQn, 5);
+    ENABLE_EXTI(9);
+    ENABLE_EXTI_FALLING(9);
+    DISABLE_EXTI_RISING(9);
+    RESET_EXTI_PENDING(9);
+
+    // NVIC_SetPriority(EXTI9_5_IRQn, 5);
     NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 

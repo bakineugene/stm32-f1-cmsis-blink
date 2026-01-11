@@ -15,7 +15,7 @@ CMSIS_CORE = cmsis_core/CMSIS/Core
 CMSIS_LINKER = $(CMSIS_ROOT)/Source/Templates/gcc/linker/STM32F103X6_FLASH.ld
 
 # Compilation flags
-CFLAGS = -mcpu=$(DEVICE_CORE) -mthumb -Wall -O0 -g
+CFLAGS = -mcpu=$(DEVICE_CORE) -mthumb -Wall -Og -g
 CFLAGS += -I$(CMSIS_CORE)/Include -I$(CMSIS_ROOT)/Include -Iinclude
 CFLAGS += -D$(DEVICE_SUBFAMILY)  -ffreestanding
 LDFLAGS = -T $(CMSIS_LINKER) -nostartfiles -nostdlib -Wl,-Map=output.map
