@@ -6,6 +6,7 @@ void _init(void) { /* empty */ }
 #define ENABLE_HSE() (RCC->CR |= RCC_CR_HSEON)
 #define HSE_READY() (RCC->CR & RCC_CR_HSERDY)
 
+#define ENABLE_GPIOA_CLOCK() (RCC->APB2ENR |= RCC_APB2ENR_IOPAEN)
 #define ENABLE_GPIOB_CLOCK() (RCC->APB2ENR |= RCC_APB2ENR_IOPBEN)
 #define ENABLE_GPIOC_CLOCK() (RCC->APB2ENR |= RCC_APB2ENR_IOPCEN)
 #define ENABLE_AFIOEN_CLOCK() (RCC->APB2ENR |= RCC_APB2ENR_AFIOEN)
@@ -21,10 +22,13 @@ void _init(void) { /* empty */ }
 #define RESET_EXTI_PENDING(pin) EXTI->PR = EXTI_PR_PR##pin
 #define EXTI_PENDING(pin) EXTI->PR & EXTI_PR_PR##pin
 
-// Preparse CRH for writing configuration values
+#define RESET_CRL(pin) CRL &= ~(GPIO_CRL_MODE##pin | GPIO_CRL_CNF##pin)
 #define RESET_CRH(pin) CRH &= ~(GPIO_CRH_MODE##pin | GPIO_CRH_CNF##pin)
 
-// Output speeds (MODE bits)
+#define CRL_OUT_10_MHZ(pin) (GPIO_CRL_MODE##pin##_0)                           // MODE = 01
+#define CRL_OUT_2_MHZ(pin)  (GPIO_CRL_MODE##pin##_1)                           // MODE = 10
+#define CRL_OUT_50_MHZ(pin) (GPIO_CRL_MODE##pin##_1 | GPIO_CRL_MODE##pin##_0)  // MODE = 11
+
 #define CRH_OUT_10_MHZ(pin) (GPIO_CRH_MODE##pin##_0)                           // MODE = 01
 #define CRH_OUT_2_MHZ(pin)  (GPIO_CRH_MODE##pin##_1)                           // MODE = 10
 #define CRH_OUT_50_MHZ(pin) (GPIO_CRH_MODE##pin##_1 | GPIO_CRH_MODE##pin##_0)  // MODE = 11
@@ -51,38 +55,17 @@ struct BlinkConfig {
 
 volatile struct BlinkConfig blink_1 = {0, MAX_BLINK_DELAY, -DELAY_BLINK_STEP};
 
-void ResetBlinkTime(void) {
-    blink_1.time = 0;
-    blink_1.delay += blink_1.delay_step;
-    if (blink_1.delay > MAX_BLINK_DELAY) blink_1.delay_step = -DELAY_BLINK_STEP;
-    if (blink_1.delay < 0) blink_1.delay_step = DELAY_BLINK_STEP;
-}
-
-struct DebounceConfig {
-    int32_t time;
-    int32_t debounce;
-};
-
-volatile struct DebounceConfig debounce = {0, 200};
-
 void UpdateBlinkTime(void) {
     ++blink_1.time;
-    if (debounce.time > 0) --debounce.time;
-
-    if (blink_1.time > blink_1.delay && READ_BIT(GPIOC->ODR, GPIO_ODR_ODR13)) {
-        GPIOC->RESET(13);
-        ResetBlinkTime();
-    }
-    if (blink_1.time > blink_1.delay && !READ_BIT(GPIOC->ODR, GPIO_ODR_ODR13)) {
-        GPIOC->SET(13);
-        ResetBlinkTime();
-    }
 }
 
-void BlinkSecondLED(void) {
-    if (debounce.time == 0) {
-        GPIOB->TOGGLE(8);
-        debounce.time = debounce.debounce;
+void BlinkLED(void) {
+    if (blink_1.time > blink_1.delay) {
+        GPIOA->TOGGLE(5);
+        blink_1.time = 0;
+        blink_1.delay += blink_1.delay_step;
+        if (blink_1.delay > MAX_BLINK_DELAY) blink_1.delay_step = -DELAY_BLINK_STEP;
+        if (blink_1.delay < 0) blink_1.delay_step = DELAY_BLINK_STEP;
     }
 }
 
@@ -90,10 +73,11 @@ void SysTick_Handler(void) {
     UpdateBlinkTime();
 }
 
-void EXTI9_5_IRQHandler(void) {
-    if (EXTI_PENDING(9)) {
-        RESET_EXTI_PENDING(9);
-        BlinkSecondLED();
+void EXTI15_10_IRQHandler(void) {
+    if (EXTI_PENDING(13)) {
+        RESET_EXTI_PENDING(13);
+        GPIOA->TOGGLE(5);
+        // BlinkSecondLED();
     }
 }
 
@@ -137,30 +121,28 @@ int main(void) {
     }
 
     ENABLE_GPIOC_CLOCK();
-    ENABLE_GPIOB_CLOCK();
+    ENABLE_GPIOA_CLOCK();
     ENABLE_AFIOEN_CLOCK();
 
+    GPIOA->RESET_CRL(5);
+    GPIOA->CRL |= CRL_OUT_2_MHZ(5);
+
     GPIOC->RESET_CRH(13);
-    GPIOC->CRH |= CRH_OUT_2_MHZ(13);
+    GPIOC->CRH |= CRH_IN_PULL(13);
+    GPIOC->PULL_UP(13);
 
-    GPIOB->RESET_CRH(8);
-    GPIOB->CRH |= CRH_OUT_2_MHZ(8);
+    RESET_EXTICR(4, 13);
+    SET_EXTICR(4, 13, PC);
 
-    GPIOB->RESET_CRH(9);
-    GPIOB->CRH |= CRH_IN_PULL(9);
-    GPIOB->PULL_UP(9);
-
-    RESET_EXTICR(3, 9);
-    SET_EXTICR(3, 9, PB);
-
-    ENABLE_EXTI(9);
-    ENABLE_EXTI_FALLING(9);
-    DISABLE_EXTI_RISING(9);
-    RESET_EXTI_PENDING(9);
+    ENABLE_EXTI(13);
+    ENABLE_EXTI_FALLING(13);
+    DISABLE_EXTI_RISING(13);
+    RESET_EXTI_PENDING(13);
 
     // NVIC_SetPriority(EXTI9_5_IRQn, 5);
-    NVIC_EnableIRQ(EXTI9_5_IRQn);
+    NVIC_EnableIRQ(EXTI15_10_IRQn);
 
-
-    while (1) { /* empty */ }
+    while (1) {
+        BlinkLED();
+    }
 }
